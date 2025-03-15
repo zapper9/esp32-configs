@@ -12,7 +12,7 @@ substitutions:
   # Projection version denotes the release version of the yaml file, allowing checking of deployed vs latest version
   project_version: "v1.0.7"
   # Restore the relay (GPO switch) upon reboot to state:
-  relay_restore_mode: RESTORE_DEFAULT_ON
+  relay_restore_mode: ALWAYS_OFF
   # Set the update interval for sensors
   sensor_update_interval: 10s
   # Current Limit in Amps. AU Plug = 10. IL, BR, EU, UK, US Plug = 16.
@@ -55,27 +55,15 @@ esphome:
     board_build.variant: esp32c3
     board_build.flash_mode: dio
   on_boot:
-    - priority: 600
-      then:
-        - select.set_index:
-            id: power_mode
-            index: !lambda |-
-                    return id(restore_mode)-1;
-        - lambda: |-
-              switch(id(restore_mode))
-              {
-              case 1:{
-                      id(relay).turn_off();
-                      break;
-                            }
-              case 2:{
-                      id(relay).turn_on();
-                      break;
-                            }
-              default:{
-                      break;
-                            }
-              }
+  - priority: 600
+    then:
+      # Skip the relay state restoration entirely
+      - select.set_index:
+          id: power_mode
+          index: 0  # You can set it to any default, as it will not trigger any relay actions.
+      - lambda: |-
+          // Skip any relay actions on boot, preventing power cycle
+          id(relay).turn_off(); // Ensures relay stays off, or do nothing here if you want no action.
 
 
 esp32:
@@ -152,10 +140,11 @@ select:
       - Always Off
       - Always On
       - Restore Power Off State
+    initial: Always Off
     on_value:
       then:
         - lambda: |-
-            id(restore_mode)=i+1;
+            id(restore_mode)=0;
 
 binary_sensor:
   - platform: status
@@ -177,10 +166,6 @@ binary_sensor:
           - OFF for at least 0.2s
         then:
           - switch.toggle: relay
-      - timing:
-          - ON for at least 4s
-        then:
-          - button.press: Reset
 
 sensor:
   - platform: uptime
@@ -212,10 +197,10 @@ sensor:
       filters:
         - throttle_average: ${sensor_update_interval}
         - lambda: if (x < 0.060) return 0.0; else return x;   #For the chip will report less than 3w power when no load is connected
-      on_value_range:
-        - above: ${current_limit}
-          then:
-            - switch.turn_off: relay
+    #  on_value_range:
+    #    - above: ${current_limit}
+    #      then:
+    #        - switch.turn_off: relay
 
     voltage:
       name: "Voltage"
